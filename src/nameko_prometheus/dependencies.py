@@ -66,7 +66,7 @@ class PrometheusMetrics(DependencyProvider):
     class, or :ref:`configured manually <configuration>`.
     """
 
-    def __init__(self):
+    def __init__(self, skip_metrics=True, metrics_endpoint="/metrics"):
         self.worker_starts: MutableMapping[WorkerContext, float] = WeakKeyDictionary()
 
     def setup(self) -> None:
@@ -78,6 +78,10 @@ class PrometheusMetrics(DependencyProvider):
         config = self.container.config.get("PROMETHEUS", {})
         service_config = config.get(service_name, {})
         prefix = service_config.get("prefix", service_name)
+
+        self.skip_metrics = service_config.get("skip_metrics", True)
+        self.metrics_endpoint = service_config.get("metrics_endpoint", "/metrics")
+
         # initialize default metrics exposed for every service
         self.http_request_total_counter = Counter(
             f"{prefix}_http_requests_total",
@@ -142,18 +146,21 @@ class PrometheusMetrics(DependencyProvider):
             if isinstance(entrypoint, HttpRequestHandler):
                 http_method = entrypoint.method
                 url = entrypoint.url
-                if exc_info:
-                    _, exc, _ = exc_info
-                    status_code = entrypoint.response_from_exception(exc).status_code
+                if self.skip_metrics and url == self.metrics_endpoint:
+                    logger.debug(f"Skiping metrics endpoint tracing")
                 else:
-                    status_code = entrypoint.response_from_result(result).status_code
-                logger.debug(f"Tracing HTTP request: {http_method} {url} {status_code}")
-                self.http_request_total_counter.labels(
-                    http_method=http_method, endpoint=url, status_code=status_code
-                ).inc()
-                self.http_request_latency_histogram.labels(
-                    http_method=http_method, endpoint=url, status_code=status_code
-                ).observe(duration)
+                    if exc_info:
+                        _, exc, _ = exc_info
+                        status_code = entrypoint.response_from_exception(exc).status_code
+                    else:
+                        status_code = entrypoint.response_from_result(result).status_code
+                    logger.debug(f"Tracing HTTP request: {http_method} {url} {status_code}")
+                    self.http_request_total_counter.labels(
+                        http_method=http_method, endpoint=url, status_code=status_code
+                    ).inc()
+                    self.http_request_latency_histogram.labels(
+                        http_method=http_method, endpoint=url, status_code=status_code
+                    ).observe(duration)
             elif isinstance(entrypoint, Rpc):
                 method_name = entrypoint.method_name
                 logger.debug(f"Tracing RPC request: {method_name}")
