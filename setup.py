@@ -43,6 +43,6 @@ setup(
         "Issue Tracker": "https://github.com/emplocity/nameko-prometheus/issues",
     },
     python_requires=">=3.6.*",
-    install_requires=["nameko>=3", "prometheus_client>=0.7,<1"],
+    install_requires=["nameko==3.0.0rc9", "prometheus_client>=0.7,<1"],
     setup_requires=["pytest-runner"],
 )
